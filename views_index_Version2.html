@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Galaxy Guardian</title>
+    <link rel="stylesheet" type="text/css" href="/static/style.css">
+</head>
+<body>
+    <h1>Galaxy Guardian</h1>
+    <form id="codeForm">
+        <label for="prompt">Enter your idea for the bot:</label><br>
+        <textarea id="prompt" name="prompt" placeholder="e.g., a bot that fetches weather data" required></textarea><br>
+        <button type="submit">Generate Code</button>
+    </form>
+
+    <div class="results-section">
+        <h2>Generated Code:</h2>
+        <pre id="generatedCode"></pre>
+
+        <h2>Formatted Code:</h2>
+        <pre id="formattedCode"></pre>
+
+        <h2>Linting Results (Pylint):</h2>
+        <pre id="lintResults"></pre>
+
+        <h2>Type Checking Results (Mypy):</h2>
+        <pre id="typeCheckResults"></pre>
+
+        <h2>Security Analysis Results (Bandit):</h2>
+        <pre id="securityResults"></pre>
+
+        <h2>Code Execution:</h2>
+        <button onclick="executeGeneratedCode()">Execute Code</button>
+        <pre id="executionOutput"></pre>
+    </div>
+
+    <script>
+        document.getElementById('codeForm').addEventListener('submit', async function(event) {
+            event.preventDefault();
+            const prompt = document.getElementById('prompt').value;
+
+            const response = await fetch('/generate_code', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `prompt=${encodeURIComponent(prompt)}`
+            });
+            const data = await response.json();
+
+            document.getElementById('generatedCode').textContent = data.generated_code || data.error;
+            document.getElementById('formattedCode').textContent = data.formatted_code || '';
+            document.getElementById('lintResults').textContent = data.lint_results || '';
+            document.getElementById('typeCheckResults').textContent = data.type_check_results || '';
+            document.getElementById('securityResults').textContent = data.security_results || '';
+        });
+
+        async function executeGeneratedCode() {
+            const codeToExecute = document.getElementById('generatedCode').textContent;
+            if (!codeToExecute) {
+                alert('No code to execute!');
+                return;
+            }
+
+            const response = await fetch('/execute_code', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `code=${encodeURIComponent(codeToExecute)}`
+            });
+            const data = await response.json();
+            document.getElementById('executionOutput').textContent = data.execution_output || data.error;
+        }
+    </script>
+</body>
+</html>
