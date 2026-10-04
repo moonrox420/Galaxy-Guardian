@@ -1,5 +1,7 @@
 package com.example.galaxyguardian.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -22,9 +24,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.FormatAlignLeft
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Code
-import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Compare
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Security
@@ -55,6 +59,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -67,6 +72,7 @@ import com.example.galaxyguardian.ui.components.AuditResultsViewer
 import com.example.galaxyguardian.ui.components.BotHeaderBanner
 import com.example.galaxyguardian.ui.components.CodeViewer
 import com.example.galaxyguardian.ui.components.ConsoleTerminal
+import com.example.galaxyguardian.ui.components.DiffViewer
 import com.example.galaxyguardian.ui.theme.CosmicPurple
 import com.example.galaxyguardian.ui.theme.CyanPrimary
 import com.example.galaxyguardian.ui.theme.GalaxyBackground
@@ -87,9 +93,18 @@ fun HomeScreen(
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
     val scrollState = rememberScrollState()
     val chipScrollState = rememberScrollState()
     val targetScrollState = rememberScrollState()
+
+    val zipExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        if (uri != null) {
+            viewModel.exportProjectZip(context, uri)
+        }
+    }
 
     val quickIdeas = if (uiState.targetLanguage == TargetLanguage.KOTLIN_ANDROID) {
         listOf(
@@ -461,7 +476,24 @@ fun HomeScreen(
                             )
                         }
 
-                        val context = androidx.compose.ui.platform.LocalContext.current
+                        IconButton(
+                            onClick = {
+                                val sanitizeTitle = uiState.prompt.take(20).replace(" ", "_")
+                                zipExportLauncher.launch("${sanitizeTitle}_project.zip")
+                            },
+                            enabled = uiState.generatedCode.isNotBlank() || uiState.formattedCode.isNotBlank(),
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(GalaxySurfaceHighlight)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Download,
+                                contentDescription = "Export ZIP",
+                                tint = NeonGreen
+                            )
+                        }
+
                         IconButton(
                             onClick = {
                                 val codeToShare = uiState.formattedCode.ifBlank { uiState.generatedCode }
@@ -484,23 +516,39 @@ fun HomeScreen(
                             Icon(
                                 imageVector = Icons.Default.Share,
                                 contentDescription = "Share Code",
-                                tint = NeonGreen
+                                tint = TextSecondary
                             )
                         }
                     }
 
-                    // Self-Repair Button if findings exist
-                    if ((uiState.analysis?.securityVulnerabilities?.size ?: 0) > 0 || (uiState.analysis?.lintIssues?.size ?: 0) > 0) {
+                    // Action tools row: Self-Repair & Generate Tests
+                    if (uiState.generatedCode.isNotBlank() || uiState.formattedCode.isNotBlank()) {
                         Spacer(modifier = Modifier.height(8.dp))
-                        OutlinedButton(
-                            onClick = { viewModel.improveAndFixCode() },
-                            enabled = !uiState.isGenerating && !uiState.isExecuting,
+                        Row(
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(10.dp)
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Icon(Icons.Default.Build, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Improve & Fix Findings (${(uiState.analysis?.securityVulnerabilities?.size ?: 0) + (uiState.analysis?.lintIssues?.size ?: 0)})")
+                            OutlinedButton(
+                                onClick = { viewModel.improveAndFixCode() },
+                                enabled = !uiState.isGenerating && !uiState.isExecuting,
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Icon(Icons.Default.Build, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Improve & Fix", fontSize = 12.sp)
+                            }
+
+                            OutlinedButton(
+                                onClick = { viewModel.generateTests() },
+                                enabled = !uiState.isGenerating && !uiState.isExecuting,
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Generate Tests", fontSize = 12.sp)
+                            }
                         }
                     }
                 }
@@ -575,6 +623,12 @@ fun HomeScreen(
                     icon = { Icon(Icons.AutoMirrored.Filled.FormatAlignLeft, contentDescription = null, modifier = Modifier.size(16.dp)) }
                 )
                 Tab(
+                    selected = uiState.currentTab == ResultsTab.DIFF_VIEW,
+                    onClick = { viewModel.setTab(ResultsTab.DIFF_VIEW) },
+                    text = { Text("Diff View", fontSize = 13.sp) },
+                    icon = { Icon(Icons.Default.Compare, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                )
+                Tab(
                     selected = uiState.currentTab == ResultsTab.LINT_RESULTS,
                     onClick = { viewModel.setTab(ResultsTab.LINT_RESULTS) },
                     text = { Text("Style & Lint", fontSize = 13.sp) },
@@ -614,6 +668,13 @@ fun HomeScreen(
                     CodeViewer(
                         code = uiState.formattedCode,
                         title = "Formatted Source"
+                    )
+                }
+                ResultsTab.DIFF_VIEW -> {
+                    DiffViewer(
+                        oldCode = uiState.originalCodeForDiff,
+                        newCode = uiState.formattedCode.ifBlank { uiState.generatedCode },
+                        title = "Diff (Original vs Repaired / Updated)"
                     )
                 }
                 ResultsTab.LINT_RESULTS -> {

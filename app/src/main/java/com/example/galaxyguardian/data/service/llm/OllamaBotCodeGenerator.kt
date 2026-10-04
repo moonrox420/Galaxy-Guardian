@@ -105,4 +105,28 @@ class OllamaBotCodeGenerator(
             )
         }
     }
+
+    suspend fun fetchAvailableModels(baseUrl: String): List<String> = withContext(Dispatchers.IO) {
+        val rawBaseUrl = baseUrl.trim().removeSuffix("/")
+        val endpoint = "$rawBaseUrl/api/tags"
+
+        try {
+            val request = Request.Builder().url(endpoint).get().build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@withContext emptyList()
+                val body = response.body?.string() ?: return@withContext emptyList()
+                val json = JSONObject(body)
+                val modelsArr = json.optJSONArray("models") ?: return@withContext emptyList()
+                val list = mutableListOf<String>()
+                for (i in 0 until modelsArr.length()) {
+                    val m = modelsArr.getJSONObject(i)
+                    val name = m.optString("name", "")
+                    if (name.isNotBlank()) list.add(name)
+                }
+                list
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
 }

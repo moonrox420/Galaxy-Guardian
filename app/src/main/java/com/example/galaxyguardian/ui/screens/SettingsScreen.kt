@@ -1,8 +1,11 @@
 package com.example.galaxyguardian.ui.screens
 
+import android.content.Intent
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,14 +26,19 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.RadioButton
@@ -68,8 +76,10 @@ fun SettingsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val themeMode by viewModel.themeMode.collectAsState()
+    val availableOllamaModels by viewModel.availableOllamaModels.collectAsState()
     val context = LocalContext.current
     val scrollState = rememberScrollState()
+    val modelChipScrollState = rememberScrollState()
 
     var tempApiKey by remember(uiState.customApiKey) { mutableStateOf(uiState.customApiKey) }
     var tempOllamaUrl by remember(uiState.ollamaBaseUrl) { mutableStateOf(uiState.ollamaBaseUrl) }
@@ -144,7 +154,7 @@ fun SettingsScreen(
 
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "Select the engine responsible for synthesizing bot architecture and code.",
+                        text = "Select the engine responsible for synthesizing code and architecture.",
                         color = TextSecondary,
                         fontSize = 12.sp
                     )
@@ -345,7 +355,7 @@ fun SettingsScreen(
                             Spacer(modifier = Modifier.height(8.dp))
 
                             Text(
-                                text = "Base URL (Emulator: http://10.0.2.2:11434, LAN: http://192.168.x.x:11434):",
+                                text = "Base URL (Emulator: http://10.0.2.2:11434, USB: http://localhost:11434 via adb reverse):",
                                 color = TextSecondary,
                                 fontSize = 12.sp
                             )
@@ -371,13 +381,56 @@ fun SettingsScreen(
 
                             Spacer(modifier = Modifier.height(10.dp))
 
-                            Text(
-                                text = "Model Name (e.g. qwen2.5-coder:7b, codellama, deepseek-coder):",
-                                color = TextSecondary,
-                                fontSize = 12.sp
-                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Active Model:",
+                                    color = TextSecondary,
+                                    fontSize = 12.sp
+                                )
+
+                                OutlinedButton(
+                                    onClick = { viewModel.fetchOllamaModels() },
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Discover Models", fontSize = 11.sp)
+                                }
+                            }
 
                             Spacer(modifier = Modifier.height(6.dp))
+
+                            if (availableOllamaModels.isNotEmpty()) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(modelChipScrollState),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    availableOllamaModels.forEach { modelName ->
+                                        val isSelected = tempOllamaModel == modelName
+                                        FilterChip(
+                                            selected = isSelected,
+                                            onClick = {
+                                                tempOllamaModel = modelName
+                                                viewModel.setOllamaModelName(modelName)
+                                            },
+                                            label = { Text(modelName, fontSize = 11.sp) },
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                selectedContainerColor = NeonGreen.copy(alpha = 0.25f),
+                                                selectedLabelColor = NeonGreen,
+                                                containerColor = GalaxySurfaceHighlight,
+                                                labelColor = TextSecondary
+                                            )
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(8.dp))
+                            }
 
                             OutlinedTextField(
                                 value = tempOllamaModel,
@@ -432,7 +485,7 @@ fun SettingsScreen(
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "No external network connections or API tokens required. Galaxy Guardian synthesizes complete, category-tailored bot architectures using deterministic local templates and persona directives.",
+                                text = "No external network connections or API tokens required. Galaxy Guardian synthesizes complete, category-tailored code architectures using deterministic local templates and persona directives.",
                                 color = TextSecondary,
                                 fontSize = 12.sp
                             )
@@ -526,7 +579,7 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Honest Analysis & Simulation Standards Card
+            // Diagnostics & Export Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
@@ -543,19 +596,40 @@ fun SettingsScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Analysis & Safety Standards",
+                            text = "Diagnostics & Export",
                             style = MaterialTheme.typography.titleMedium,
                             color = TextPrimary,
                             fontWeight = FontWeight.Bold
                         )
                     }
 
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Text(
+                        text = "Export sanitized diagnostics logs for debugging without exposing secrets.",
+                        color = TextSecondary,
+                        fontSize = 12.sp
+                    )
+
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    PolicyItem("Code Style & PEP 8 Analyzer", "Validates line lengths, naming conventions, docstrings, and syntax structure.")
-                    PolicyItem("Type Annotation Coverage", "Audits parameter type annotations and missing return type hints.")
-                    PolicyItem("Security Pattern Scanner", "Detects eval(), exec(), shell=True, hardcoded secrets, and unsafe deserialization.")
-                    PolicyItem("Safe Lifecycle Simulation", "Simulates bot event loops in memory without executing untrusted bytecode on device.")
+                    OutlinedButton(
+                        onClick = {
+                            val diagnosticsText = viewModel.exportDiagnostics()
+                            val sendIntent = Intent().apply {
+                                action = Intent.ACTION_SEND
+                                putExtra(Intent.EXTRA_TEXT, diagnosticsText)
+                                type = "text/plain"
+                            }
+                            context.startActivity(Intent.createChooser(sendIntent, "Share Diagnostics Log"))
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Export Sanitized Diagnostics Log")
+                    }
                 }
             }
 
@@ -581,51 +655,19 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
                         Text(
-                            text = "Galaxy Guardian v2.0",
+                            text = "Galaxy Guardian vNext",
                             color = TextPrimary,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 14.sp
                         )
                         Text(
-                            text = "Autonomous Bot Workbench for Modern Android",
+                            text = "Android AI Builder & Autonomous Workbench",
                             color = TextSecondary,
                             fontSize = 12.sp
                         )
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-fun PolicyItem(title: String, desc: String) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.Top
-    ) {
-        Box(
-            modifier = Modifier
-                .padding(top = 4.dp)
-                .size(6.dp)
-                .clip(RoundedCornerShape(3.dp))
-                .background(NeonGreen)
-        )
-        Spacer(modifier = Modifier.width(10.dp))
-        Column {
-            Text(
-                text = title,
-                color = TextPrimary,
-                fontWeight = FontWeight.Medium,
-                fontSize = 13.sp
-            )
-            Text(
-                text = desc,
-                color = TextSecondary,
-                fontSize = 11.sp
-            )
         }
     }
 }

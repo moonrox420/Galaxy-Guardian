@@ -1,6 +1,7 @@
 package com.example.galaxyguardian.ui.viewmodel
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.galaxyguardian.data.model.ArchitectureProfile
@@ -16,14 +17,17 @@ import com.example.galaxyguardian.data.repository.BotRepository
 import com.example.galaxyguardian.data.repository.EncryptedCredentialStore
 import com.example.galaxyguardian.data.repository.PersonalityDataStore
 import com.example.galaxyguardian.data.repository.ThemeMode
-import com.example.galaxyguardian.data.service.CodeAnalysisEngine
 import com.example.galaxyguardian.data.service.SimulatedExecutionEngine
 import com.example.galaxyguardian.data.service.analyzers.AnalyzerRegistry
+import com.example.galaxyguardian.data.service.diagnostics.DiagnosticsLogger
+import com.example.galaxyguardian.data.service.diagnostics.GenerationMetric
+import com.example.galaxyguardian.data.service.export.ProjectExporter
 import com.example.galaxyguardian.data.service.llm.BotCodeGenerator
 import com.example.galaxyguardian.data.service.llm.GenerationConfig
 import com.example.galaxyguardian.data.service.llm.GenerationResult
 import com.example.galaxyguardian.data.service.llm.LlmProviderType
 import com.example.galaxyguardian.data.service.llm.LlmServiceRouter
+import com.example.galaxyguardian.data.service.llm.OllamaBotCodeGenerator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -46,7 +50,8 @@ enum class ResultsTab {
     LINT_RESULTS,
     TYPE_CHECK,
     SECURITY_AUDIT,
-    SIMULATION
+    SIMULATION,
+    DIFF_VIEW
 }
 
 data class UiState(
@@ -59,6 +64,8 @@ data class UiState(
     val activeOperation: ActiveOperation = ActiveOperation.IDLE,
     val generatedCode: String = "",
     val formattedCode: String = "",
+    val originalCodeForDiff: String = "",
+    val showDiffView: Boolean = false,
     val analysis: QualityAnalysis? = null,
     val executionResult: ExecutionResult? = null,
     val errorMessage: String? = null,
@@ -77,12 +84,16 @@ class GalaxyGuardianViewModel(application: Application) : AndroidViewModel(appli
     private val repository = BotRepository(application)
     private val personalityDataStore = PersonalityDataStore(application)
     private val encryptedCredentialStore = EncryptedCredentialStore(application)
-    private val codeGenerator: BotCodeGenerator = LlmServiceRouter()
+    private val ollamaGenerator = OllamaBotCodeGenerator()
+    private val codeGenerator: BotCodeGenerator = LlmServiceRouter(ollamaGenerator = ollamaGenerator)
 
     private var activeJob: Job? = null
 
     private val _themeMode = MutableStateFlow(ThemeMode.SYSTEM)
     val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
+
+    private val _availableOllamaModels = MutableStateFlow<List<String>>(emptyList())
+    val availableOllamaModels: StateFlow<List<String>> = _availableOllamaModels.asStateFlow()
 
     private val _uiState = MutableStateFlow(
         UiState(
@@ -281,6 +292,24 @@ class GalaxyGuardianViewModel(application: Application) : AndroidViewModel(appli
         encryptedCredentialStore.saveCustomApiKey(key)
     }
 
+    fun fetchOllamaModels() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(statusMessage = "Querying Ollama models from ${_uiState.value.ollamaBaseUrl}...")
+            val models = ollamaGenerator.fetchAvailableModels(_uiState.value.ollamaBaseUrl)
+            _availableOllamaModels.value = models
+            if (models.isNotEmpty()) {
+                _uiState.value = _uiState.value.copy(statusMessage = "Discovered ${models.size} Ollama models!")
+            } else {
+                _uiState.value = _uiState.value.copy(errorMessage = "Could not fetch Ollama models. Check server connection.")
+            }
+        }
+    }
+
+    fun toggleDiffView() {
+        val currentTab = if (_uiState.value.currentTab == ResultsTab.DIFF_VIEW) ResultsTab.GENERATED_CODE else ResultsTab.DIFF_VIEW
+        _uiState.value = _uiState.value.copy(currentTab = currentTab)
+    }
+
     fun updatePersonality(
         name: String = _uiState.value.personality.name,
         tone: String = _uiState.value.personality.tone,
@@ -412,6 +441,7 @@ class GalaxyGuardianViewModel(application: Application) : AndroidViewModel(appli
 
         activeJob?.cancel()
         activeJob = viewModelScope.launch {
+            val startTime = System.currentTimeMillis()
             _uiState.value = _uiState.value.copy(
                 isGenerating = true,
                 activeOperation = ActiveOperation.GENERATING,
@@ -471,9 +501,23 @@ class GalaxyGuardianViewModel(application: Application) : AndroidViewModel(appli
                 val analyzer = AnalyzerRegistry.getAnalyzer(_uiState.value.targetLanguage)
                 val analysis = analyzer.analyze(rawCode)
 
+                val latency = System.currentTimeMillis() - startTime
+                DiagnosticsLogger.logMetric(
+                    GenerationMetric(
+                        id = UUID.randomUUID().toString(),
+                        provider = _uiState.value.providerType,
+                        model = effectiveModel,
+                        language = _uiState.value.targetLanguage,
+                        latencyMs = latency,
+                        securityScore = analysis.securityScore,
+                        isSuccess = true
+                    )
+                )
+
                 _uiState.value = _uiState.value.copy(
                     generatedCode = rawCode,
                     formattedCode = analysis.formattedCode,
+                    originalCodeForDiff = rawCode,
                     analysis = analysis,
                     statusMessage = statusText,
                     currentTab = ResultsTab.GENERATED_CODE
@@ -540,17 +584,83 @@ class GalaxyGuardianViewModel(application: Application) : AndroidViewModel(appli
                     val analyzer = AnalyzerRegistry.getAnalyzer(currentState.targetLanguage)
                     val newAnalysis = analyzer.analyze(repairedCode)
 
+                    val prevCount = analysis.securityVulnerabilities.size + analysis.lintIssues.size
+                    val newCount = newAnalysis.securityVulnerabilities.size + newAnalysis.lintIssues.size
+                    val fixedCount = (prevCount - newCount).coerceAtLeast(0)
+
                     _uiState.value = _uiState.value.copy(
+                        originalCodeForDiff = currentCode,
                         generatedCode = repairedCode,
                         formattedCode = newAnalysis.formattedCode,
                         analysis = newAnalysis,
-                        statusMessage = "Self-repair complete: ${newAnalysis.securityVulnerabilities.size} findings remaining",
-                        currentTab = ResultsTab.GENERATED_CODE
+                        statusMessage = "Self-repair complete: $prevCount findings → $newCount remaining ($fixedCount fixed!)",
+                        currentTab = ResultsTab.DIFF_VIEW
                     )
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 _uiState.value = _uiState.value.copy(errorMessage = "Repair failed: ${e.message}")
+            } finally {
+                _uiState.value = _uiState.value.copy(
+                    isGenerating = false,
+                    activeOperation = ActiveOperation.IDLE
+                )
+            }
+        }
+    }
+
+    fun generateTests() {
+        val currentState = _uiState.value
+        val currentCode = currentState.formattedCode.ifBlank { currentState.generatedCode }
+        if (currentCode.isBlank()) return
+
+        val testPrompt = "Generate unit tests for the following source code:\n```\n$currentCode\n```\nOutput complete unit test code."
+
+        activeJob?.cancel()
+        activeJob = viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                isGenerating = true,
+                activeOperation = ActiveOperation.GENERATING,
+                statusMessage = "Generating unit test suite..."
+            )
+
+            try {
+                val config = GenerationConfig(
+                    providerType = currentState.providerType,
+                    modelName = if (currentState.providerType == LlmProviderType.OLLAMA) currentState.ollamaModelName else currentState.selectedModel,
+                    baseUrl = if (currentState.providerType == LlmProviderType.OLLAMA) currentState.ollamaBaseUrl else "https://generativelanguage.googleapis.com",
+                    apiKey = currentState.customApiKey,
+                    temperature = 0.3f
+                )
+
+                val req = GenerationRequest(
+                    prompt = testPrompt,
+                    language = currentState.targetLanguage,
+                    target = currentState.generationTarget,
+                    architecture = currentState.architectureProfile,
+                    personality = currentState.personality,
+                    config = config
+                )
+
+                val result = codeGenerator.generateRequest(req)
+                if (result is GenerationResult.Success) {
+                    val testFileName = if (currentState.targetLanguage == TargetLanguage.KOTLIN_ANDROID) "\n// File: test/UnitTest.kt\n" else "\n# File: test_main.py\n"
+                    val combinedCode = "$currentCode\n$testFileName${result.code}"
+
+                    val analyzer = AnalyzerRegistry.getAnalyzer(currentState.targetLanguage)
+                    val newAnalysis = analyzer.analyze(combinedCode)
+
+                    _uiState.value = _uiState.value.copy(
+                        generatedCode = combinedCode,
+                        formattedCode = newAnalysis.formattedCode,
+                        analysis = newAnalysis,
+                        statusMessage = "Unit test suite generated and attached to project!",
+                        currentTab = ResultsTab.GENERATED_CODE
+                    )
+                }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                _uiState.value = _uiState.value.copy(errorMessage = "Test generation failed: ${e.message}")
             } finally {
                 _uiState.value = _uiState.value.copy(
                     isGenerating = false,
@@ -594,6 +704,33 @@ class GalaxyGuardianViewModel(application: Application) : AndroidViewModel(appli
                     activeOperation = ActiveOperation.IDLE
                 )
             }
+        }
+    }
+
+    fun exportDiagnostics(): String {
+        return DiagnosticsLogger.exportSanitizedDiagnostics(_uiState.value.analysis)
+    }
+
+    fun exportProjectZip(context: android.content.Context, destinationUri: Uri) {
+        val currentState = _uiState.value
+        val code = currentState.formattedCode.ifBlank { currentState.generatedCode }
+        val project = BotProject(
+            id = UUID.randomUUID().toString(),
+            title = currentState.prompt.take(30).trim().capitalizeFirst(),
+            prompt = currentState.prompt,
+            targetLanguage = currentState.targetLanguage.persistenceId,
+            generatedCode = currentState.generatedCode,
+            formattedCode = currentState.formattedCode,
+            analysis = currentState.analysis ?: AnalyzerRegistry.getAnalyzer(currentState.targetLanguage).analyze(code),
+            providerType = currentState.providerType.name,
+            modelName = currentState.selectedModel
+        )
+
+        val success = ProjectExporter.exportProjectZip(context, project, destinationUri)
+        if (success) {
+            _uiState.value = _uiState.value.copy(statusMessage = "Exported project archive to destination!")
+        } else {
+            _uiState.value = _uiState.value.copy(errorMessage = "Export to ZIP failed.")
         }
     }
 

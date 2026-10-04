@@ -23,11 +23,17 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -36,6 +42,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.galaxyguardian.data.service.llm.MultiFileProjectParser
 import com.example.galaxyguardian.ui.theme.CyanPrimary
 import com.example.galaxyguardian.ui.theme.GalaxySurface
 import com.example.galaxyguardian.ui.theme.GalaxySurfaceHighlight
@@ -49,10 +56,18 @@ fun CodeViewer(
     code: String,
     title: String,
     modifier: Modifier = Modifier,
-    emptyPlaceholder: String = "No code generated yet. Enter a bot prompt above and tap 'Generate Code'."
+    emptyPlaceholder: String = "No code generated yet. Enter a prompt above and tap 'Generate Code'."
 ) {
     val context = LocalContext.current
     val horizontalScrollState = rememberScrollState()
+    val fileChipScrollState = rememberScrollState()
+
+    val parsedFiles = remember(code) { MultiFileProjectParser.parse(code) }
+    var selectedFileIndex by remember(code) { mutableStateOf(0) }
+
+    val activeFile = parsedFiles.getOrNull(selectedFileIndex) ?: parsedFiles.firstOrNull()
+    val activeCode = activeFile?.content ?: code
+    val activePath = activeFile?.path ?: title
 
     Card(
         modifier = modifier
@@ -87,8 +102,8 @@ fun CodeViewer(
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 14.sp
                     )
-                    if (code.isNotBlank()) {
-                        val linesCount = code.lines().size
+                    if (activeCode.isNotBlank()) {
+                        val linesCount = activeCode.lines().size
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "($linesCount lines)",
@@ -98,12 +113,12 @@ fun CodeViewer(
                     }
                 }
 
-                if (code.isNotBlank()) {
+                if (activeCode.isNotBlank()) {
                     Row {
                         IconButton(
                             onClick = {
                                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                val clip = ClipData.newPlainText("Galaxy Guardian Code", code)
+                                val clip = ClipData.newPlainText("Galaxy Guardian Code", activeCode)
                                 clipboard.setPrimaryClip(clip)
                                 Toast.makeText(context, "Code copied to clipboard", Toast.LENGTH_SHORT).show()
                             },
@@ -121,10 +136,10 @@ fun CodeViewer(
                             onClick = {
                                 val shareIntent = Intent().apply {
                                     action = Intent.ACTION_SEND
-                                    putExtra(Intent.EXTRA_TEXT, code)
+                                    putExtra(Intent.EXTRA_TEXT, activeCode)
                                     type = "text/plain"
                                 }
-                                context.startActivity(Intent.createChooser(shareIntent, "Share Bot Code"))
+                                context.startActivity(Intent.createChooser(shareIntent, "Share Code"))
                             },
                             modifier = Modifier.size(34.dp)
                         ) {
@@ -139,8 +154,41 @@ fun CodeViewer(
                 }
             }
 
+            // Multi-file Project File Selector Tabs
+            if (parsedFiles.size > 1) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(GalaxySurfaceHighlight.copy(alpha = 0.3f))
+                        .horizontalScroll(fileChipScrollState)
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    parsedFiles.forEachIndexed { idx, file ->
+                        val isSelected = idx == selectedFileIndex
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = { selectedFileIndex = idx },
+                            label = {
+                                Text(
+                                    text = file.path,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                )
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = CyanPrimary.copy(alpha = 0.25f),
+                                selectedLabelColor = CyanPrimary,
+                                containerColor = GalaxySurface,
+                                labelColor = TextSecondary
+                            )
+                        )
+                    }
+                }
+            }
+
             // Code content or placeholder
-            if (code.isBlank()) {
+            if (activeCode.isBlank()) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -156,7 +204,7 @@ fun CodeViewer(
                     )
                 }
             } else {
-                val lines = code.lines()
+                val lines = activeCode.lines()
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
