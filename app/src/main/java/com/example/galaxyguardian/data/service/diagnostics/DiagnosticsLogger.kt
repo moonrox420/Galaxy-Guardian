@@ -52,7 +52,7 @@ object DiagnosticsLogger {
         return sanitizeSecrets(sb.toString())
     }
 
-    private fun sanitizeSecrets(input: String): String {
+    fun sanitizeSecrets(input: String): String {
         return input
             .replace(Regex("""AIzaSy[a-zA-Z0-9_-]{33}"""), "AIzaSy[REDACTED_API_KEY]")
             .replace(Regex("""ghp_[a-zA-Z0-9]{36}"""), "ghp_[REDACTED_GITHUB_TOKEN]")

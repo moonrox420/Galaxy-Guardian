@@ -705,7 +705,9 @@ fun HomeScreen(
                     ConsoleTerminal(
                         executionResult = uiState.executionResult,
                         isExecuting = uiState.isExecuting,
-                        onExecuteClick = { viewModel.executeCode() }
+                        onExecuteClick = { viewModel.executeCode() },
+                        selectedScenario = uiState.selectedScenario,
+                        onScenarioSelected = { viewModel.setSimulationScenario(it) }
                     )
                 }
             }

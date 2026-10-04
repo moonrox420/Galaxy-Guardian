@@ -75,6 +75,7 @@ data class UiState(
     val customApiKey: String = "",
     val ollamaBaseUrl: String = "http://10.0.2.2:11434",
     val ollamaModelName: String = "qwen2.5-coder:7b",
+    val selectedScenario: com.example.galaxyguardian.data.service.SimulationScenario = com.example.galaxyguardian.data.service.SimulationScenario.NOMINAL,
     val statusMessage: String? = null,
     val personality: BotPersonality = BotPersonality()
 )
@@ -670,6 +671,13 @@ class GalaxyGuardianViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
+    fun setSimulationScenario(scenario: com.example.galaxyguardian.data.service.SimulationScenario) {
+        _uiState.value = _uiState.value.copy(
+            selectedScenario = scenario,
+            statusMessage = "Scenario set: ${scenario.displayName}"
+        )
+    }
+
     fun executeCode() {
         val codeToRun = _uiState.value.formattedCode.ifBlank { _uiState.value.generatedCode }
         if (codeToRun.isBlank()) {
@@ -683,11 +691,14 @@ class GalaxyGuardianViewModel(application: Application) : AndroidViewModel(appli
                 isExecuting = true,
                 activeOperation = ActiveOperation.SIMULATING,
                 currentTab = ResultsTab.SIMULATION,
-                statusMessage = "Launching in-memory lifecycle simulator..."
+                statusMessage = "Launching simulator scenario [${_uiState.value.selectedScenario.displayName}]..."
             )
 
             try {
-                val result = SimulatedExecutionEngine.simulateExecution(codeToRun)
+                val result = SimulatedExecutionEngine.simulateExecution(
+                    codeString = codeToRun,
+                    scenario = _uiState.value.selectedScenario
+                )
                 _uiState.value = _uiState.value.copy(
                     executionResult = result,
                     statusMessage = if (result.isSuccess) "Simulation completed successfully." else "Simulation finished with alerts."

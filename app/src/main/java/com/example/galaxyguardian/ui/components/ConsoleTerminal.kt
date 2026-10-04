@@ -27,6 +27,8 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -42,6 +44,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.galaxyguardian.data.model.ExecutionResult
+import com.example.galaxyguardian.data.service.SimulationScenario
 import com.example.galaxyguardian.ui.theme.CyanPrimary
 import com.example.galaxyguardian.ui.theme.GalaxySurface
 import com.example.galaxyguardian.ui.theme.GalaxySurfaceHighlight
@@ -58,10 +61,13 @@ fun ConsoleTerminal(
     executionResult: ExecutionResult?,
     isExecuting: Boolean,
     onExecuteClick: () -> Unit,
+    selectedScenario: SimulationScenario = SimulationScenario.NOMINAL,
+    onScenarioSelected: (SimulationScenario) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
+    val scenarioChipScrollState = rememberScrollState()
 
     Card(
         modifier = modifier
@@ -138,18 +144,43 @@ fun ConsoleTerminal(
                 }
             }
 
+            // Scenario Pack Selector Row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(scenarioChipScrollState)
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                SimulationScenario.entries.forEach { scenario ->
+                    val isSelected = selectedScenario == scenario
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = { onScenarioSelected(scenario) },
+                        label = { Text(scenario.displayName, fontSize = 11.sp) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = NeonGreen.copy(alpha = 0.25f),
+                            selectedLabelColor = NeonGreen,
+                            containerColor = GalaxySurfaceHighlight,
+                            labelColor = TextSecondary
+                        )
+                    )
+                }
+            }
+
             // Action Execute button bar
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                    .padding(horizontal = 14.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Mode: In-Memory Lifecycle Simulator (Safe on-device simulation)",
+                    text = "Mode: In-Memory Lifecycle Simulator (${selectedScenario.description})",
                     color = TextSecondary,
-                    fontSize = 11.sp
+                    fontSize = 11.sp,
+                    modifier = Modifier.weight(1f)
                 )
 
                 Button(
@@ -199,7 +230,7 @@ fun ConsoleTerminal(
                         )
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
-                            text = "Initializing safe bot lifecycle simulator...",
+                            text = "Initializing lifecycle simulator scenario [${selectedScenario.displayName}]...",
                             color = TerminalText,
                             fontFamily = FontFamily.Monospace,
                             fontSize = 12.sp
@@ -207,7 +238,7 @@ fun ConsoleTerminal(
                     }
                 } else if (executionResult == null) {
                     Text(
-                        text = "--- Simulation Output ---\n(Press 'Simulate Run' to test bot event loop in memory)\n--- Errors ---\n(None)",
+                        text = "--- Simulation Output ---\n(Press 'Simulate Run' to test lifecycle scenario in memory)\n--- Errors ---\n(None)",
                         color = TextTertiary,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,
