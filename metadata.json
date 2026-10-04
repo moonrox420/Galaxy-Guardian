@@ -1,0 +1,8 @@
+{
+  "name": "Galaxy Guardian",
+  "description": "AI-powered bot generator with real-time code synthesis, formatting, linting, type-checking, security auditing, and sandboxed execution.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

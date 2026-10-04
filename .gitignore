@@ -1,0 +1,30 @@
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+*.apk
+*.aab
+*.aar
+output.json
+
+# Environment and secrets
+.env
+
+# Virtualenv
+.venv/
+__pycache__/
+*.py[cod]
+
+# Build artifacts & caches
+build/
+app/build/
+.kotlin/
+.gradle/
+.idea/
+*.iml
+local.properties

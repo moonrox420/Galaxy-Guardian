@@ -1,0 +1,14 @@
+# Force gradlew and shell scripts to use LF line endings so Linux CI/CD runners can execute them cleanly
+gradlew text eol=lf
+*.sh text eol=lf
+
+# Force batch scripts to use CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary files
+gradle/wrapper/gradle-wrapper.jar binary
+*.jar binary
+*.apk binary
+
+*.jar binary
